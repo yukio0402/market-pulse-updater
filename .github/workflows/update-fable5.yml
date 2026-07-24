@@ -83,12 +83,19 @@ jobs:
           --output webapp/public/trillion_static.json
           --required-key items
 
-      - name: Validate and build company dashboard
+      - name: Validate company snapshot
         run: |
           python company/scripts/write_health.py
           python company/scripts/validate_market_data.py company/data/market.csv
-          npm exec --prefix company/webapp -- vite build
-          python company/webapp/scripts/build_single_pulse.py
+
+      - name: Build company dashboard
+        working-directory: company/webapp
+        run: |
+          npx vite build
+          python scripts/build_single_pulse.py
+
+      - name: Revalidate company snapshot
+        run: |
           python company/scripts/validate_market_data.py company/data/market.csv
 
       - name: Publish company snapshot atomically
@@ -120,9 +127,16 @@ jobs:
         run: |
           python updater/scripts/sync_snapshot.py company family
           python family/scripts/validate_market_data.py family/data/market.csv
-          npm ci --prefix family/webapp
-          npm exec --prefix family/webapp -- vite build
-          python family/webapp/scripts/build_single_pulse.py
+
+      - name: Build family dashboard
+        working-directory: family/webapp
+        run: |
+          npm ci
+          npx vite build
+          python scripts/build_single_pulse.py
+
+      - name: Revalidate family snapshot
+        run: |
           python family/scripts/validate_market_data.py family/data/market.csv
 
       - name: Publish family snapshot atomically
