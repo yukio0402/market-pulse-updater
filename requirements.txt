@@ -1,0 +1,9 @@
+beautifulsoup4
+holidays
+html5lib
+lxml
+numpy
+pandas
+pandas_datareader
+requests
+yfinance

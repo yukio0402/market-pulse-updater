@@ -1,0 +1,111 @@
+name: Update private Fable5 news feeds
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Existing cadence, unchanged. UTC cron / JST: 06:17, 15:47
+    - cron: "17 21 * * *"
+    - cron: "47 6 * * *"
+
+concurrency:
+  group: guarded-fable5-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out updater
+        uses: actions/checkout@v4
+        with:
+          path: updater
+
+      - name: Check out company dashboard
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.COMPANY_REPOSITORY }}
+          ref: main
+          ssh-key: ${{ secrets.COMPANY_DEPLOY_KEY }}
+          path: company
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: updater/requirements.txt
+
+      - name: Install verification dependency
+        run: python -m pip install requests
+
+      - name: Refresh static TODAY'S BRIEF and MARKET WIRE
+        run: |
+          python updater/scripts/run_optional_json.py \
+            --cwd company \
+            --script scripts/fetch_news_static.py \
+            --output webapp/public/news_static.json \
+            --required-key items
+          python updater/scripts/run_optional_json.py \
+            --cwd company \
+            --script scripts/fetch_wire_static.py \
+            --output webapp/public/wire_static.json \
+            --required-key items
+
+      - name: Publish company news atomically
+        run: |
+          python updater/scripts/commit_snapshot.py \
+            --repo company \
+            --message "Update guarded news feeds" \
+            --files \
+              webapp/public/news_static.json \
+              webapp/public/wire_static.json
+
+      - name: Check out family dashboard
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.FAMILY_REPOSITORY }}
+          ref: main
+          ssh-key: ${{ secrets.FAMILY_DEPLOY_KEY }}
+          path: family
+          persist-credentials: true
+
+      - name: Synchronize family news
+        run: |
+          python updater/scripts/sync_snapshot.py company family \
+            --files \
+              webapp/public/news_static.json \
+              webapp/public/wire_static.json
+          python updater/scripts/commit_snapshot.py \
+            --repo family \
+            --message "Update guarded news feeds" \
+            --files \
+              webapp/public/news_static.json \
+              webapp/public/wire_static.json
+
+      - name: Verify both Cloudflare news deployments
+        env:
+          COMPANY_HEALTH_URL: ${{ secrets.COMPANY_HEALTH_URL }}
+          FAMILY_HEALTH_URL: ${{ secrets.FAMILY_HEALTH_URL }}
+          COMPANY_BASIC_USER: ${{ secrets.COMPANY_BASIC_USER }}
+          COMPANY_BASIC_PASSWORD: ${{ secrets.COMPANY_BASIC_PASSWORD }}
+          FAMILY_BASIC_USER: ${{ secrets.FAMILY_BASIC_USER }}
+          FAMILY_BASIC_PASSWORD: ${{ secrets.FAMILY_BASIC_PASSWORD }}
+        run: |
+          python updater/scripts/verify_static_files.py \
+            --source company/webapp/public \
+            --company-url "${COMPANY_HEALTH_URL}" \
+            --family-url "${FAMILY_HEALTH_URL}" \
+            --company-user "${COMPANY_BASIC_USER}" \
+            --company-password "${COMPANY_BASIC_PASSWORD}" \
+            --family-user "${FAMILY_BASIC_USER}" \
+            --family-password "${FAMILY_BASIC_PASSWORD}" \
+            --files news_static.json wire_static.json

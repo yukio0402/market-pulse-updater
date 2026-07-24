@@ -1,0 +1,169 @@
+name: Update private Fable5 dashboards
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force a full market fetch (1 to force)"
+        required: false
+        default: ""
+  schedule:
+    # UTC cron / JST: 06:23, 07:23, 15:38, 18:57
+    - cron: "23 21 * * *"
+    - cron: "23 22 * * *"
+    - cron: "38 6 * * *"
+    - cron: "57 9 * * *"
+
+concurrency:
+  group: guarded-fable5-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  MARKET_DASHBOARD_FORCE_FETCH: ${{ github.event.inputs.force || '' }}
+  MARKET_DASHBOARD_FETCH_RETRIES: "2"
+  MARKET_DASHBOARD_FETCH_RETRY_SECONDS: "300"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Check out updater
+        uses: actions/checkout@v4
+        with:
+          path: updater
+
+      - name: Check out company dashboard
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.COMPANY_REPOSITORY }}
+          ref: main
+          ssh-key: ${{ secrets.COMPANY_DEPLOY_KEY }}
+          path: company
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: updater/requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: company/webapp/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r updater/requirements.txt
+          npm ci --prefix company/webapp
+
+      - name: Test data safeguards
+        working-directory: company
+        run: python -m unittest discover -s tests -v
+
+      - name: Fetch latest market snapshot
+        working-directory: company
+        run: python scripts/scheduled_fetch.py
+
+      - name: Refresh optional market context
+        run: >
+          python updater/scripts/run_optional_json.py
+          --cwd company
+          --script scripts/fetch_trillion.py
+          --output webapp/public/trillion_static.json
+          --required-key items
+
+      - name: Validate and build company dashboard
+        run: |
+          python company/scripts/write_health.py
+          python company/scripts/validate_market_data.py company/data/market.csv
+          npm exec --prefix company/webapp -- vite build
+          python company/webapp/scripts/build_single_pulse.py
+          python company/scripts/validate_market_data.py company/data/market.csv
+
+      - name: Publish company snapshot atomically
+        run: |
+          python updater/scripts/commit_snapshot.py \
+            --repo company \
+            --message "Update guarded market snapshot" \
+            --files \
+              data/market.csv \
+              data/analyst_targets.csv \
+              webapp/public/market.csv \
+              webapp/public/analyst_targets.csv \
+              webapp/public/health.json \
+              webapp/public/trillion_static.json \
+              webapp/data/market.csv \
+              webapp/data/analyst_targets.csv \
+              webapp/market-pulse-single.html
+
+      - name: Check out family dashboard
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.FAMILY_REPOSITORY }}
+          ref: main
+          ssh-key: ${{ secrets.FAMILY_DEPLOY_KEY }}
+          path: family
+          persist-credentials: true
+
+      - name: Synchronize and validate family snapshot
+        run: |
+          python updater/scripts/sync_snapshot.py company family
+          python family/scripts/validate_market_data.py family/data/market.csv
+          npm ci --prefix family/webapp
+          npm exec --prefix family/webapp -- vite build
+          python family/webapp/scripts/build_single_pulse.py
+          python family/scripts/validate_market_data.py family/data/market.csv
+
+      - name: Publish family snapshot atomically
+        run: |
+          python updater/scripts/commit_snapshot.py \
+            --repo family \
+            --message "Update guarded market snapshot" \
+            --files \
+              data/market.csv \
+              data/analyst_targets.csv \
+              webapp/public/market.csv \
+              webapp/public/analyst_targets.csv \
+              webapp/public/health.json \
+              webapp/public/trillion_static.json \
+              webapp/data/market.csv \
+              webapp/data/analyst_targets.csv \
+              webapp/market-pulse-single.html
+
+      - name: Verify both Cloudflare deployments
+        env:
+          COMPANY_HEALTH_URL: ${{ secrets.COMPANY_HEALTH_URL }}
+          FAMILY_HEALTH_URL: ${{ secrets.FAMILY_HEALTH_URL }}
+        run: |
+          python updater/scripts/verify_production.py \
+            --health company/webapp/public/health.json \
+            --company-url "${COMPANY_HEALTH_URL}" \
+            --family-url "${FAMILY_HEALTH_URL}"
+
+      - name: Keep scheduled workflow active
+        if: success()
+        working-directory: updater
+        run: |
+          if [ "$(date -u +%d)" != "01" ]; then
+            exit 0
+          fi
+          date -u +%Y-%m-%d > state/last-success.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/last-success.txt
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Record monthly updater heartbeat"
+          git push
