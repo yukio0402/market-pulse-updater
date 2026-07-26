@@ -1,0 +1,32 @@
+name: Update classic family dashboard
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force a full market fetch (1 to force)"
+        required: false
+        default: ""
+  schedule:
+    # UTC cron / JST: 05:30, 07:00, 08:47, 16:17, 17:37
+    - cron: "30 20 * * *"
+    - cron: "0 22 * * *"
+    - cron: "47 23 * * *"
+    - cron: "17 7 * * *"
+    - cron: "37 8 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    uses: ./.github/workflows/_publish-classic.yml
+    with:
+      label: classic-family
+      health_url: https://market-dashboard-family.pages.dev/health.json
+      force: ${{ github.event.inputs.force || '' }}
+    secrets:
+      source_repository: ${{ secrets.COMPANY_REPOSITORY }}
+      source_deploy_key: ${{ secrets.COMPANY_DEPLOY_KEY }}
+      target_repository: ${{ secrets.CLASSIC_FAMILY_REPOSITORY }}
+      target_deploy_key: ${{ secrets.CLASSIC_FAMILY_DEPLOY_KEY }}

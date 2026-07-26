@@ -1,0 +1,144 @@
+name: Publish one classic dashboard
+
+on:
+  workflow_call:
+    inputs:
+      label:
+        required: true
+        type: string
+      health_url:
+        required: true
+        type: string
+      force:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      source_repository:
+        required: true
+      source_deploy_key:
+        required: true
+      target_repository:
+        required: true
+      target_deploy_key:
+        required: true
+
+concurrency:
+  group: guarded-classic-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  MARKET_DASHBOARD_FORCE_FETCH: ${{ inputs.force }}
+  MARKET_DASHBOARD_FETCH_RETRIES: "2"
+  MARKET_DASHBOARD_FETCH_RETRY_SECONDS: "300"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Check out updater
+        uses: actions/checkout@v4
+        with:
+          path: updater
+
+      - name: Check out validated data source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.source_repository }}
+          ref: main
+          ssh-key: ${{ secrets.source_deploy_key }}
+          path: source
+          persist-credentials: false
+
+      - name: Check out classic dashboard
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.target_repository }}
+          ref: main
+          ssh-key: ${{ secrets.target_deploy_key }}
+          path: target
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: updater/requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: target/webapp/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r updater/requirements.txt
+          npm ci --prefix target/webapp
+
+      - name: Test data safeguards
+        working-directory: source
+        run: python -m unittest discover -s tests -v
+
+      - name: Fetch latest market snapshot
+        working-directory: source
+        run: python scripts/scheduled_fetch.py
+
+      - name: Validate source snapshot
+        run: |
+          python source/scripts/write_health.py
+          python source/scripts/validate_market_data.py source/data/market.csv
+
+      - name: Synchronize classic snapshot
+        run: |
+          python updater/scripts/sync_snapshot.py source target --files \
+            data/market.csv \
+            data/analyst_targets.csv \
+            webapp/public/market.csv \
+            webapp/public/analyst_targets.csv \
+            webapp/public/health.json \
+            webapp/data/market.csv \
+            webapp/data/analyst_targets.csv
+
+      - name: Validate classic snapshot
+        run: python source/scripts/validate_market_data.py target/data/market.csv
+
+      - name: Build classic dashboard without DFL synchronization
+        working-directory: target/webapp
+        run: |
+          npx vite build
+          python scripts/build_single_html.py
+
+      - name: Revalidate classic snapshot
+        run: python source/scripts/validate_market_data.py target/data/market.csv
+
+      - name: Publish classic snapshot atomically
+        run: |
+          python updater/scripts/commit_snapshot.py \
+            --repo target \
+            --message "Update guarded market snapshot" \
+            --files \
+              data/market.csv \
+              data/analyst_targets.csv \
+              webapp/public/market.csv \
+              webapp/public/analyst_targets.csv \
+              webapp/public/health.json \
+              webapp/data/market.csv \
+              webapp/data/analyst_targets.csv \
+              webapp/market-dashboard-single.html
+
+      - name: Verify Cloudflare production
+        run: |
+          python updater/scripts/verify_single_production.py \
+            --label "${{ inputs.label }}" \
+            --health target/webapp/public/health.json \
+            --url "${{ inputs.health_url }}"

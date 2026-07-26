@@ -1,0 +1,29 @@
+name: Update classic company dashboard
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force a full market fetch (1 to force)"
+        required: false
+        default: ""
+  schedule:
+    # UTC cron / JST: 08:00, 15:45
+    - cron: "0 23 * * *"
+    - cron: "45 6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    uses: ./.github/workflows/_publish-classic.yml
+    with:
+      label: classic-company
+      health_url: https://market-dashboard-anf.pages.dev/health.json
+      force: ${{ github.event.inputs.force || '' }}
+    secrets:
+      source_repository: ${{ secrets.COMPANY_REPOSITORY }}
+      source_deploy_key: ${{ secrets.COMPANY_DEPLOY_KEY }}
+      target_repository: ${{ secrets.CLASSIC_COMPANY_REPOSITORY }}
+      target_deploy_key: ${{ secrets.CLASSIC_COMPANY_DEPLOY_KEY }}

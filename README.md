@@ -1,6 +1,8 @@
 # Market Pulse Updater
 
-Public execution shell for guarded updates of two private Fable5 dashboards.
+Public execution shell for guarded updates of four private market dashboards:
+the company and family Fable5 editions plus the company and family classic
+editions.
 This repository contains no dashboard source, market snapshot, credentials, or
 private repository identifiers.
 
@@ -12,6 +14,9 @@ GitHub Actions runs at 06:23, 07:23, 15:38, and 18:57 JST. A manual run can set
 `TODAY'S BRIEF / MARKET WIRE` retains its existing schedule: static Nikkei and
 theme feeds run at 06:17 and 15:47 JST, while the live `/api/news` feed keeps
 its independent 15-minute Cloudflare cache.
+
+The classic company dashboard runs at 08:00 and 15:45 JST. The classic family
+dashboard runs at 05:30, 07:00, 08:47, 16:17, and 17:37 JST.
 
 ## Safeguards
 
@@ -25,6 +30,8 @@ its independent 15-minute Cloudflare cache.
   market hash before the run succeeds.
 - Optional context feeds retain their last valid JSON on failure.
 - DFL files and DFL build steps are intentionally excluded.
+- Classic snapshots use the same validated data generator and are independently
+  checked against their public Cloudflare health endpoint after each push.
 
 ## Required secrets
 
@@ -38,6 +45,10 @@ its independent 15-minute Cloudflare cache.
 - `COMPANY_BASIC_PASSWORD`
 - `FAMILY_BASIC_USER`
 - `FAMILY_BASIC_PASSWORD`
+- `CLASSIC_COMPANY_REPOSITORY`
+- `CLASSIC_FAMILY_REPOSITORY`
+- `CLASSIC_COMPANY_DEPLOY_KEY`
+- `CLASSIC_FAMILY_DEPLOY_KEY`
 
 The deploy keys are independent and write-enabled only for their corresponding
 private repository.
