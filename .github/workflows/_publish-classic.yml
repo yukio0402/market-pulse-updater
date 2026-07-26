@@ -97,6 +97,7 @@ jobs:
         run: |
           python source/scripts/write_health.py
           python source/scripts/validate_market_data.py source/data/market.csv
+          python updater/scripts/validate_snapshot_date.py source/data/market.csv
 
       - name: Synchronize classic snapshot
         run: |
@@ -119,7 +120,9 @@ jobs:
           python scripts/build_single_html.py
 
       - name: Revalidate classic snapshot
-        run: python source/scripts/validate_market_data.py target/data/market.csv
+        run: |
+          python source/scripts/validate_market_data.py target/data/market.csv
+          python updater/scripts/validate_snapshot_date.py target/data/market.csv
 
       - name: Publish classic snapshot atomically
         run: |

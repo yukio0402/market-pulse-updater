@@ -23,6 +23,7 @@ dashboard runs at 05:30, 07:00, 08:47, 16:17, and 17:37 JST.
 - The company snapshot is fetched and validated before either repository moves.
 - Duplicate dates, unsorted rows, stale series, internal gaps, non-positive
   prices, and isolated scale anomalies fail the run.
+- Weekend or future-dated final rows fail the run, including forced refreshes.
 - Generated files are committed as one atomic snapshot.
 - Only an explicit generated-file allowlist can be committed.
 - The family snapshot is byte-copied from the validated company snapshot.
