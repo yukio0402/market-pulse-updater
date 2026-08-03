@@ -89,9 +89,15 @@ jobs:
         working-directory: source
         run: python -m unittest discover -s tests -v
 
+      - name: Test publication safeguards
+        run: python -m unittest discover -s updater/tests -v
+
       - name: Fetch latest market snapshot
         working-directory: source
         run: python scripts/scheduled_fetch.py
+
+      - name: Normalize snapshot calendar
+        run: python updater/scripts/normalize_snapshot_calendar.py source
 
       - name: Validate source snapshot
         run: |

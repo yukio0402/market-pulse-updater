@@ -71,9 +71,15 @@ jobs:
         working-directory: company
         run: python -m unittest discover -s tests -v
 
+      - name: Test publication safeguards
+        run: python -m unittest discover -s updater/tests -v
+
       - name: Fetch latest market snapshot
         working-directory: company
         run: python scripts/scheduled_fetch.py
+
+      - name: Normalize snapshot calendar
+        run: python updater/scripts/normalize_snapshot_calendar.py company
 
       - name: Refresh optional market context
         run: >
