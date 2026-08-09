@@ -25,7 +25,8 @@ dashboard runs at 05:30, 07:00, 08:47, 16:17, and 17:37 JST.
   prices, and isolated scale anomalies fail the run.
 - Recent weekend bond observations are removed before validation so sovereign
   yields retain business-day daily cadence without synthetic Saturday/Sunday
-  points.
+  points. Weekend-only rows that become empty are removed as well, keeping the
+  snapshot date anchored to the latest market day.
 - Weekend or future-dated final rows, future bond observations, and any recent
   weekend bond observations that remain after normalization fail the run,
   including forced refreshes.

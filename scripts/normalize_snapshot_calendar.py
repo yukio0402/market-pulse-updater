@@ -52,16 +52,34 @@ def normalize_market_csv(path: Path, tail_days: int) -> tuple[int, list[date]]:
     if not parsed_dates:
         raise ValueError(f"{path} has no valid Date rows")
 
-    latest = max(parsed_dates)
-    cutoff = latest - timedelta(days=tail_days - 1)
+    market_columns = [
+        column
+        for column in fieldnames
+        if column != "Date" and column not in BOND_COLUMNS
+    ]
+    market_dates = [
+        date.fromisoformat((row.get("Date") or "").strip())
+        for row in rows
+        if (row.get("Date") or "").strip()
+        and any((row.get(column) or "").strip() for column in market_columns)
+    ]
+    # A bond source can append Saturday/Sunday rows after the last real market
+    # session. Anchor the cleanup window to the latest row with non-bond data,
+    # otherwise removing those trailing rows would move the validator's cutoff.
+    latest_market = max(market_dates) if market_dates else max(parsed_dates)
+    cutoff = latest_market - timedelta(days=tail_days - 1)
     cleared = 0
     cleared_dates: set[date] = set()
+    normalized_rows: list[dict[str, str]] = []
+    value_columns = [column for column in fieldnames if column != "Date"]
     for row in rows:
         raw = (row.get("Date") or "").strip()
         if not raw:
+            normalized_rows.append(row)
             continue
         parsed = date.fromisoformat(raw)
         if parsed < cutoff or parsed.weekday() < 5:
+            normalized_rows.append(row)
             continue
         for column in BOND_COLUMNS:
             if (row.get(column) or "").strip():
@@ -69,7 +87,15 @@ def normalize_market_csv(path: Path, tail_days: int) -> tuple[int, list[date]]:
                 cleared += 1
                 cleared_dates.add(parsed)
 
-    if cleared:
+        # Some sources create a Saturday/Sunday row containing only bond
+        # observations. Once those observations are cleared, drop the empty
+        # row so the snapshot's latestDate remains the latest market day.
+        if not any((row.get(column) or "").strip() for column in value_columns):
+            cleared_dates.add(parsed)
+            continue
+        normalized_rows.append(row)
+
+    if cleared or len(normalized_rows) != len(rows):
         path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
             mode="w",
@@ -85,7 +111,7 @@ def normalize_market_csv(path: Path, tail_days: int) -> tuple[int, list[date]]:
                 extrasaction="ignore",
             )
             writer.writeheader()
-            writer.writerows(rows)
+            writer.writerows(normalized_rows)
             temporary = Path(target.name)
         os.replace(temporary, path)
 

@@ -44,6 +44,8 @@ class SnapshotCalendarTests(unittest.TestCase):
         canonical = self.market.read_bytes()
         self.assertEqual(canonical, (self.repo / "webapp/data/market.csv").read_bytes())
         self.assertEqual(canonical, (self.repo / "webapp/public/market.csv").read_bytes())
+        self.assertNotIn(b"2026-08-01", canonical)
+        self.assertNotIn(b"2026-08-02", canonical)
 
         errors, latest, bond_dates = snapshot_calendar_errors(
             self.market,
@@ -52,6 +54,45 @@ class SnapshotCalendarTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(latest, date(2026, 8, 3))
         self.assertEqual(set(bond_dates.values()), {date(2026, 7, 31)})
+
+    def test_empty_recent_weekend_rows_are_removed(self) -> None:
+        self.write_rows(
+            [
+                {"Date": "2026-07-04", **{column: "0.8" for column in BOND_COLUMNS}},
+                {"Date": "2026-07-05", **{column: "0.9" for column in BOND_COLUMNS}},
+                {
+                    "Date": "2026-08-07",
+                    "SP500": "7000",
+                    **{column: "1.0" for column in BOND_COLUMNS},
+                },
+                {"Date": "2026-08-08"},
+                {"Date": "2026-08-09"},
+            ]
+        )
+
+        cleared, dates = synchronize_market_files(self.repo, tail_days=35)
+
+        self.assertEqual(cleared, 14)
+        self.assertEqual(
+            dates,
+            [
+                date(2026, 7, 4),
+                date(2026, 7, 5),
+                date(2026, 8, 8),
+                date(2026, 8, 9),
+            ],
+        )
+        with self.market.open(newline="", encoding="utf-8") as source:
+            rows = list(csv.DictReader(source))
+        self.assertEqual([row["Date"] for row in rows], ["2026-08-07"])
+
+        errors, latest, bond_dates = snapshot_calendar_errors(
+            self.market,
+            today_jst=date(2026, 8, 9),
+        )
+        self.assertEqual(errors, [])
+        self.assertEqual(latest, date(2026, 8, 7))
+        self.assertEqual(set(bond_dates.values()), {date(2026, 8, 7)})
 
     def test_recent_weekend_bonds_fail_validation(self) -> None:
         self.write_rows(
