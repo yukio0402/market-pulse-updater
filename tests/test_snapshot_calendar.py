@@ -98,6 +98,10 @@ class SnapshotCalendarTests(unittest.TestCase):
         self.write_rows(
             [
                 {
+                    "Date": "2026-07-11",
+                    **{column: "0.9" for column in BOND_COLUMNS},
+                },
+                {
                     "Date": "2026-08-14",
                     "SP500": "7000",
                     **{column: "1.0" for column in BOND_COLUMNS},
@@ -112,8 +116,8 @@ class SnapshotCalendarTests(unittest.TestCase):
 
         cleared, dates = synchronize_market_files(self.repo, tail_days=35)
 
-        self.assertEqual(cleared, 7)
-        self.assertEqual(dates, [date(2026, 8, 15)])
+        self.assertEqual(cleared, 14)
+        self.assertEqual(dates, [date(2026, 7, 11), date(2026, 8, 15)])
         with self.market.open(newline="", encoding="utf-8") as source:
             rows = list(csv.DictReader(source))
         self.assertEqual([row["Date"] for row in rows], ["2026-08-14"])

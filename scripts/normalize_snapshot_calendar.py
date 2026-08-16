@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove recent weekend bond observations before a snapshot is published."""
+"""Remove recent weekend rows before a market snapshot is published."""
 
 from __future__ import annotations
 
@@ -52,21 +52,11 @@ def normalize_market_csv(path: Path, tail_days: int) -> tuple[int, list[date]]:
     if not parsed_dates:
         raise ValueError(f"{path} has no valid Date rows")
 
-    market_columns = [
-        column
-        for column in fieldnames
-        if column != "Date" and column not in BOND_COLUMNS
-    ]
-    market_dates = [
-        date.fromisoformat((row.get("Date") or "").strip())
-        for row in rows
-        if (row.get("Date") or "").strip()
-        and any((row.get(column) or "").strip() for column in market_columns)
-    ]
-    # A bond source can append Saturday/Sunday rows after the last real market
-    # session. Anchor the cleanup window to the latest row with non-bond data,
-    # otherwise removing those trailing rows would move the validator's cutoff.
-    latest_market = max(market_dates) if market_dates else max(parsed_dates)
+    # Anchor the cleanup window to the latest date that will remain after all
+    # weekend rows are removed. This keeps the normalizer's cutoff identical to
+    # the validator's cutoff, including the oldest boundary day.
+    business_dates = [parsed for parsed in parsed_dates if parsed.weekday() < 5]
+    latest_market = max(business_dates) if business_dates else max(parsed_dates)
     cutoff = latest_market - timedelta(days=tail_days - 1)
     cleared = 0
     cleared_dates: set[date] = set()
