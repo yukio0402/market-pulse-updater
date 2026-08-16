@@ -94,6 +94,39 @@ class SnapshotCalendarTests(unittest.TestCase):
         self.assertEqual(latest, date(2026, 8, 7))
         self.assertEqual(set(bond_dates.values()), {date(2026, 8, 7)})
 
+    def test_recent_weekend_market_values_are_removed(self) -> None:
+        self.write_rows(
+            [
+                {
+                    "Date": "2026-08-14",
+                    "SP500": "7000",
+                    **{column: "1.0" for column in BOND_COLUMNS},
+                },
+                {
+                    "Date": "2026-08-15",
+                    "SP500": "7010",
+                    **{column: "1.1" for column in BOND_COLUMNS},
+                },
+            ]
+        )
+
+        cleared, dates = synchronize_market_files(self.repo, tail_days=35)
+
+        self.assertEqual(cleared, 7)
+        self.assertEqual(dates, [date(2026, 8, 15)])
+        with self.market.open(newline="", encoding="utf-8") as source:
+            rows = list(csv.DictReader(source))
+        self.assertEqual([row["Date"] for row in rows], ["2026-08-14"])
+        self.assertEqual(rows[0]["SP500"], "7000")
+
+        errors, latest, bond_dates = snapshot_calendar_errors(
+            self.market,
+            today_jst=date(2026, 8, 16),
+        )
+        self.assertEqual(errors, [])
+        self.assertEqual(latest, date(2026, 8, 14))
+        self.assertEqual(set(bond_dates.values()), {date(2026, 8, 14)})
+
     def test_recent_weekend_bonds_fail_validation(self) -> None:
         self.write_rows(
             [

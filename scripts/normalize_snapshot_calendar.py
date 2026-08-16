@@ -71,7 +71,6 @@ def normalize_market_csv(path: Path, tail_days: int) -> tuple[int, list[date]]:
     cleared = 0
     cleared_dates: set[date] = set()
     normalized_rows: list[dict[str, str]] = []
-    value_columns = [column for column in fieldnames if column != "Date"]
     for row in rows:
         raw = (row.get("Date") or "").strip()
         if not raw:
@@ -85,15 +84,13 @@ def normalize_market_csv(path: Path, tail_days: int) -> tuple[int, list[date]]:
             if (row.get(column) or "").strip():
                 row[column] = ""
                 cleared += 1
-                cleared_dates.add(parsed)
 
-        # Some sources create a Saturday/Sunday row containing only bond
-        # observations. Once those observations are cleared, drop the empty
-        # row so the snapshot's latestDate remains the latest market day.
-        if not any((row.get(column) or "").strip() for column in value_columns):
-            cleared_dates.add(parsed)
-            continue
-        normalized_rows.append(row)
+        # Provider timestamps can place Friday's final quote on Saturday and
+        # can also create weekend-only FX or bond rows. A daily market snapshot
+        # must remain keyed to exchange business dates, so remove every recent
+        # weekend row instead of retaining a partially populated synthetic day.
+        cleared_dates.add(parsed)
+        continue
 
     if cleared or len(normalized_rows) != len(rows):
         path.parent.mkdir(parents=True, exist_ok=True)

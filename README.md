@@ -23,10 +23,10 @@ dashboard runs at 05:30, 07:00, 08:47, 16:17, and 17:37 JST.
 - The company snapshot is fetched and validated before either repository moves.
 - Duplicate dates, unsorted rows, stale series, internal gaps, non-positive
   prices, and isolated scale anomalies fail the run.
-- Recent weekend bond observations are removed before validation so sovereign
-  yields retain business-day daily cadence without synthetic Saturday/Sunday
-  points. Weekend-only rows that become empty are removed as well, keeping the
-  snapshot date anchored to the latest market day.
+- Recent weekend rows are removed before validation, including rows where a
+  provider timestamp placed Friday equity/FX values on Saturday. Sovereign
+  yields retain business-day daily cadence without synthetic weekend points,
+  and the snapshot date remains anchored to the latest exchange business day.
 - Weekend or future-dated final rows, future bond observations, and any recent
   weekend bond observations that remain after normalization fail the run,
   including forced refreshes.
