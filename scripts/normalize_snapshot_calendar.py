@@ -11,6 +11,11 @@ import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 
+if __package__:
+    from .benchmark_weekends import BENCHMARK_COLUMNS, is_weekend_date
+else:
+    from benchmark_weekends import BENCHMARK_COLUMNS, is_weekend_date
+
 
 BOND_COLUMNS: tuple[str, ...] = (
     "US10Y",
@@ -67,6 +72,15 @@ def normalize_market_csv(path: Path, tail_days: int) -> tuple[int, list[date]]:
             normalized_rows.append(row)
             continue
         parsed = date.fromisoformat(raw)
+        # US-listed semiconductor ETFs have no weekend session. Preserve
+        # historical rows and all other columns; remove only these two cells.
+        # Run across the whole history, including a scheduled fresh-skip path.
+        if is_weekend_date(raw):
+            for column in BENCHMARK_COLUMNS:
+                if (row.get(column) or "").strip():
+                    row[column] = ""
+                    cleared += 1
+                    cleared_dates.add(parsed)
         if parsed < cutoff or parsed.weekday() < 5:
             normalized_rows.append(row)
             continue
